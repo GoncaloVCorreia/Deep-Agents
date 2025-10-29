@@ -5,11 +5,18 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "chromadb>=1.2.2",
     "deepagents>=0.1.4",
     "dotenv>=0.9.9",
     "fastapi>=0.120.0",
     "langchain[google-genai]>=1.0.2",
+    "llama-index>=0.12.52",
+    "llama-index-embeddings-google-genai>=0.2.1",
+    "llama-index-llms-google-genai>=0.2.6",
+    "llama-index-vector-stores-chroma>=0.4.2",
+    "pandas>=2.3.3",
     "pydantic-settings>=2.11.0",
     "tavily-python>=0.7.12",
     "uvicorn>=0.38.0",
+    "xmlschema>=4.2.0",
 ]
