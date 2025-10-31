@@ -11,4 +11,4 @@ wheels/
 .venv
 .env
 
-/embeddings/
+**/chroma_store/
