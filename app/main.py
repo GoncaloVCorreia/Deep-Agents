@@ -1,12 +1,18 @@
-from fastapi import FastAPI
 import uvicorn
 from app.routers.chat import router as chat_router
+from app.routers.pcs import router as pcs_router
 from fastapi.middleware.cors import CORSMiddleware
-from app.config import settings  # or wherever your Settings class is
+from app.config import settings 
+from fastapi import FastAPI
+from pydantic import BaseModel
 
 
 
-app = FastAPI(title="Digital Twin API")
+class CodeRequest(BaseModel):
+    message: str
+
+app = FastAPI(title="ICD-10 Deep Agent")
+
 
 # ✅ Add CORS middleware
 app.add_middleware(
@@ -20,6 +26,7 @@ app.add_middleware(
 
 # Include routers
 app.include_router(chat_router)
+app.include_router(pcs_router)   
 
 
 if __name__ == "__main__":

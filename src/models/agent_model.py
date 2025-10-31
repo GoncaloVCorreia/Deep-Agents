@@ -6,6 +6,8 @@ from deepagents import create_deep_agent
 from langgraph.types import Command
 from langgraph.checkpoint.memory import MemorySaver
 from src.llms import GoogleGenAILLM
+from src.tools import internet_search, get_weather, get_code,get_pcs_codes
+from src.prompts import SUPERVISOR_PROMPT, DIAGNOSIS_PROMPT, PROCEDURES_PROMPT
 from src.tools import internet_search, get_weather, icd10_query
 from src.prompts import SUPERVISOR_PROMPT, DIAGNOSIS_PROMPT, EVAL_PROMPT
 
@@ -61,15 +63,22 @@ class AgentManager:
         self.checkpointer = MemorySaver()
         self.supervisor_agent = self._build_supervisor_agent()
         self.diagnosis_agent = self._build_diagnosis_agent()
-
+        self.procedures_agent = self._build_procedures_agent()  # Procedures agent is only used as a sub-agent
     def _build_supervisor_agent(self):
         subagents = [
             {
                 "name": "diagnosis_agent",
-                "description": "Handles ICD-10 code lookups for conditions",
+                "description": "Handles ICD-10-CM diagnosis code lookups for conditions",
                 "system_prompt": DIAGNOSIS_PROMPT,
                 "tools": [icd10_query],
                 "model": self.llm.llm  # uses same LLM by default
+            },
+            {
+                "name": "procedures_agent",
+                "description": "Handles ICD-10-PCS procedure coding from clinical notes using official 2026 XML",
+                "system_prompt": PROCEDURES_PROMPT,
+                "tools": [get_pcs_codes],
+                "model": self.llm.llm
             },
           
 
@@ -91,6 +100,15 @@ class AgentManager:
         agent = create_deep_agent(
             tools=[icd10_query],
             system_prompt=DIAGNOSIS_PROMPT,
+            model=self.llm.llm,
+            checkpointer=self.checkpointer
+        )
+        return agent
+    def _build_procedures_agent(self):
+        # Optionally build a separate deep agent for diagnosis if you want isolation
+        agent = create_deep_agent(
+            tools=[get_pcs_codes],
+            system_prompt=PROCEDURES_PROMPT,
             model=self.llm.llm,
             checkpointer=self.checkpointer
         )
@@ -167,3 +185,8 @@ class AgentManager:
                     answer = last.get("content")
 
         return {"status": "completed", "thread_id": thread_id, "answer": answer or str(result)}
+    
+   
+
+  
+
