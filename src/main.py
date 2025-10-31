@@ -27,3 +27,8 @@ def decide(thread_id: str, action_name: str, decision: str, args: Optional[Dict[
 
     del SESSIONS[thread_id]
     return answer
+
+
+if __name__ == "__main__":
+    a=chat("Cholera due to Vibrio cholerae 01, biovar cholerae")
+    print(a)

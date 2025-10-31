@@ -6,8 +6,54 @@ from deepagents import create_deep_agent
 from langgraph.types import Command
 from langgraph.checkpoint.memory import MemorySaver
 from src.llms import GoogleGenAILLM
-from src.tools import internet_search, get_weather, get_code
-from src.prompts import SUPERVISOR_PROMPT, DIAGNOSIS_PROMPT
+from src.tools import internet_search, get_weather, icd10_query
+from src.prompts import SUPERVISOR_PROMPT, DIAGNOSIS_PROMPT, EVAL_PROMPT
+
+def coerce_text(v: Any) -> str:
+    """Flatten common LangChain/LangGraph/Gemini shapes into a plain string."""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+
+    # Objects with `.content`
+    if hasattr(v, "content"):
+        return coerce_text(getattr(v, "content"))
+
+    # Gemini/LC parts list
+    if isinstance(v, list):
+        out = []
+        for p in v:
+            if isinstance(p, str):
+                out.append(p)
+            elif isinstance(p, dict):
+                # {'type':'text','text':'...'} or {'text':'...'}
+                if isinstance(p.get("text"), str):
+                    out.append(p["text"])
+                elif "content" in p:
+                    out.append(coerce_text(p["content"]))
+                elif "parts" in p:
+                    out.append(coerce_text(p["parts"]))
+            elif hasattr(p, "content"):
+                out.append(coerce_text(p.content))
+            else:
+                out.append(str(p))
+        return "\n".join(s for s in out if s)
+
+    # Dict-shaped results
+    if isinstance(v, dict):
+        # Try common keys first
+        for k in ("answer", "output", "text", "content"):
+            if k in v:
+                return coerce_text(v[k])
+        # Gemini candidates → candidates[0].content.parts
+        cands = v.get("candidates")
+        if isinstance(cands, list) and cands:
+            return coerce_text(cands[0].get("content"))
+        return str(v)
+
+    return str(v)
+
 
 class AgentManager:
     def __init__(self, llm: GoogleGenAILLM):
@@ -22,16 +68,18 @@ class AgentManager:
                 "name": "diagnosis_agent",
                 "description": "Handles ICD-10 code lookups for conditions",
                 "system_prompt": DIAGNOSIS_PROMPT,
-                "tools": [get_code],
+                "tools": [icd10_query],
                 "model": self.llm.llm  # uses same LLM by default
-            }
+            },
+          
+
         ]
         agent = create_deep_agent(
-            tools=[internet_search, get_weather],
+            tools=[get_weather],
             interrupt_on={
             "get_weather": {"allowed_decisions": ["approve", "edit", "reject"]}
              },
-            system_prompt=SUPERVISOR_PROMPT,
+            system_prompt=EVAL_PROMPT,
             model=self.llm.llm,
             checkpointer=self.checkpointer,
             subagents=subagents
@@ -41,12 +89,13 @@ class AgentManager:
     def _build_diagnosis_agent(self):
         # Optionally build a separate deep agent for diagnosis if you want isolation
         agent = create_deep_agent(
-            tools=[get_code],
+            tools=[icd10_query],
             system_prompt=DIAGNOSIS_PROMPT,
             model=self.llm.llm,
             checkpointer=self.checkpointer
         )
         return agent
+    
 
     def chat(self, user_message: str, thread_id: Optional[str] = None) -> Dict[str, Any]:
         if thread_id is None:
@@ -57,21 +106,19 @@ class AgentManager:
             config=config
         )
         return self._handle_result(result, thread_id, config)
+    
 
     def _handle_result(self, result: Any, thread_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
-        
-       
+        # Interrupt path
         if isinstance(result, dict) and result.get("__interrupt__"):
             interrupts = result["__interrupt__"][0].value
-            action_requests = interrupts["action_requests"]
-            
             return {
                 "status": "pending_approval",
                 "thread_id": thread_id,
-                "actions": action_requests
+                "actions": interrupts.get("action_requests", []),
             }
 
-        # Completed without interruption
+        # Completed path – extract last message content if present
         answer = None
         if hasattr(result, "content"):
             answer = result.content
@@ -79,17 +126,22 @@ class AgentManager:
             msgs = result["messages"]
             if msgs:
                 last = msgs[-1]
-                # if last is an object with attribute `content`
                 if hasattr(last, "content"):
                     answer = last.content
-                # else if last is a dict
                 elif isinstance(last, dict):
                     answer = last.get("content")
+
+        # ALWAYS normalize to a string
+        answer_str = coerce_text(answer if answer is not None else result)
+
         return {
             "status": "completed",
-            "answer": answer or str(result),
-            "thread_id": thread_id
+            "answer": answer_str,
+            "thread_id": thread_id,
         }
+
+
+    
 
     def decide(self, thread_id: str, action_name: str, decision: Literal["approve","edit","reject"], args: Optional[Dict[str, Any]],config) -> Dict[str, Any]:
         decision_obj = {"type": decision}
