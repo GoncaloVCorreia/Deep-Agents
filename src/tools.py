@@ -158,6 +158,23 @@ def _node_text(n) -> str:
     return ""
 
 @tool
+def get_code(condition: str) -> str:
+    """Diagnosis agent tool: return ICD-10 code for a given condition."""
+    # implement actual lookup logic here
+    return f"CODE_FOR_{condition.replace(' ', '_').upper() } is 0"
+
+# src/tools.py (append)
+import json
+from src.procedures.coder import code_note
+from langchain_core.tools import tool
+
+@tool
+def get_pcs_codes(note: str) -> str:
+    """Return ICD-10-PCS candidates (JSON) from an English note."""
+    result = code_note(note, 5)
+    return json.dumps(result, ensure_ascii=False)
+
+
 def icd10_query(query: str) -> str:
     """
     Search two ICD-10 collections and return the TEXT content for each hit:
